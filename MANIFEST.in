@@ -1,0 +1,3 @@
+﻿recursive-include chunks *
+include README.rst DESCRIPTION INSTALL.txt
+exclude *.orig *.pyc sdist dist .svn
