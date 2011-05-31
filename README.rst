@@ -5,6 +5,8 @@ The library support only JSON format.
 
 Sign in via login and password, code or token.
 
+To sign in you need client_id, get it from http://api.yandex.ru/oauth/doc/dg/tasks/register-client.xml for your application.
+
 Example usage
 -------------
 

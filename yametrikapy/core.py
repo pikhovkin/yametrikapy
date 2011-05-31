@@ -30,6 +30,9 @@ class UnauthorizedError(ClientError):
     """ 401 http-status """
     pass
 
+class ForbiddenError(ClientError):
+    """ 403 http-status """
+    pass
 
 class MethodNotAllowedError(ClientError):
     """ 405 http-status """
@@ -201,6 +204,9 @@ class Metrika(object):
         if self._client.Status == 401:
             raise UnauthorizedError(
                 '%d: %s' % (self._client.Status, 'Check your token'))
+        if self._client.Status == 403:
+            raise ForbiddenError(
+                '%d: %s' % (self._client.Status, 'Check your access rigths to object'))
         if self._client.Status == 405:
             allowed = self._client.GetHeader('Allowed')
             raise MethodNotAllowedError(
