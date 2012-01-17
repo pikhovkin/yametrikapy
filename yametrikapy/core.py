@@ -17,6 +17,10 @@ import json
 from client import APIClient
 
 
+class BaseClass(object):
+    pass
+
+
 class ClientError(Exception):
     pass
 
@@ -236,7 +240,17 @@ class Metrika(object):
             'ulogin': ulogin,
             'field': field
         }
-        return self._GetData('GET', uri, params)
+        obj = self._GetData('GET', uri, params)
+
+        result = BaseClass()
+        result.counters = []
+        result.counters.extend(obj.counters)
+
+        while hasattr(obj, 'links') and 'next' in obj.links:
+            obj = self._GetData('GET', obj.links['next'])
+            result.counters.extend(obj.counters)
+
+        return result
 
     def GetCounter(self, id, field=''):
         """
