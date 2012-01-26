@@ -89,7 +89,7 @@ class APIClient(object):
         gz = gzip.GzipFile(fileobj=StringIO(stream))
         return gz.read()
 
-    def GetHeader(self, key, default=''):
+    def get_header(self, key, default=''):
         return self._response.getheader(key, default)
 
     def _http_request(self, method, uri, params='', headers={}):
@@ -129,7 +129,7 @@ class APIClient(object):
 
         return connection.getresponse()
 
-    def Request(self, method, url, params={}, headers={}):
+    def request(self, method, url, params={}, headers={}):
         if not headers:
             headers = self.HEADERS
         if params and isinstance(params, dict):
