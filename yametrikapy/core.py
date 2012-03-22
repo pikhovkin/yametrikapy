@@ -8,7 +8,8 @@
 # Author:      Sergey Pikhovkin (s@pikhovkin.ru)
 #
 # Created:     12.05.2011
-# Copyright:   (c) Sergey Pikhovkin 2011
+# Updated:     23.03.2012
+# Copyright:   (c) Sergey Pikhovkin 2012
 # Licence:     MIT
 #-------------------------------------------------------------------------------
 
@@ -36,6 +37,10 @@ class UnauthorizedError(ClientError):
 
 class ForbiddenError(ClientError):
     """ 403 http-status """
+    pass
+
+class NotFoundError(ClientError):
+    """ 404 http-status """
     pass
 
 class MethodNotAllowedError(ClientError):
@@ -100,6 +105,8 @@ class Metrika(object):
     _STAT_CONTENT_EXIT = _STAT_CONTENT + '/exit'
     _STAT_CONTENT_TITLES = _STAT_CONTENT + '/titles'
     _STAT_CONTENT_URL_PARAM = _STAT_CONTENT + '/url_param'
+    _STAT_CONTENT_USER_VARS = _STAT_SOURCES + '/user_vars'
+    _STAT_CONTENT_ECOMMERCE = _STAT_CONTENT + '/ecommerce'
 
     _STAT_GEO = _STAT + '/geo'
 
@@ -209,12 +216,14 @@ class Metrika(object):
             raise UnauthorizedError(
                 '%d: %s' % (self._client.Status, 'Check your token'))
         if self._client.Status == 403:
-            raise ForbiddenError(
-                '%d: %s' % (self._client.Status, 'Check your access rigths to object'))
+            raise ForbiddenError('%d: %s' %
+                (self._client.Status, 'Check your access rigths to object'))
+        if self._client.Status == 404:
+            raise NotFoundError('%d: %s' %
+                (self._client.Status, 'Resource not found'))
         if self._client.Status == 405:
             allowed = self._client.GetHeader('Allowed')
-            raise MethodNotAllowedError(
-                '%d: %s\nUse %s' %
+            raise MethodNotAllowedError('%d: %s\nUse %s' %
                     (self._client.Status, 'Method not allowed', allowed))
         return self._ResponseHandle()
 
@@ -227,11 +236,33 @@ class Metrika(object):
     def GetData(self):
         return self._data
 
+    def _get_all_pages(attr_data, *attrs):
+        def wrapper(f):
+            def func(self, *args, **kwargs):
+                obj = f(self, *args, **kwargs)
+                result = BaseClass()
+                setattr(result, attr_data, [])
+                attr = getattr(result, attr_data)
+                attr.extend(getattr(obj, attr_data))
+
+                if attrs:
+                    for a in attrs:
+                        if hasattr(obj, a):
+                            setattr(result, a, getattr(obj, a))
+
+                while hasattr(obj, 'links') and 'next' in obj.links:
+                    obj = self._GetData('GET', obj.links['next'])
+                    attr.extend(getattr(obj, attr_data))
+
+                return result
+            return func
+        return wrapper
+
     # Counters
 
+    @_get_all_pages('counters')
     def GetCounterList(self, type='', permission='', ulogin='', field=''):
-        """
-        Returns a list of existing counters available to the user.
+        """ Returns a list of existing counters available to the user
         """
         uri = self._GetURI(self._COUNTERS)
         params = {
@@ -240,29 +271,17 @@ class Metrika(object):
             'ulogin': ulogin,
             'field': field
         }
-        obj = self._GetData('GET', uri, params)
-
-        result = BaseClass()
-        result.counters = []
-        result.counters.extend(obj.counters)
-
-        while hasattr(obj, 'links') and 'next' in obj.links:
-            obj = self._GetData('GET', obj.links['next'])
-            result.counters.extend(obj.counters)
-
-        return result
+        return self._GetData('GET', uri, params)
 
     def GetCounter(self, id, field=''):
-        """
-        Returns information about the specified counter.
+        """ Returns information about the specified counter
         """
         uri = self._GetURI(self._COUNTER % id)
         params = {'field': field}
         return self._GetData('GET', uri, params)
 
     def AddCounter(self, name, site, **kwargs):
-        """
-        Creates a counter with the specified parameters.
+        """ Creates a counter with the specified parameters
         """
         uri = self._GetURI(self._COUNTERS)
         kwargs['name'] = name
@@ -271,39 +290,41 @@ class Metrika(object):
         return self._GetData('POST', uri, json.dumps(params))
 
     def EditCounter(self, id, **kwargs):
-        """
-        Modifies the data for the specified counter.
+        """ Modifies the data for the specified counter
         """
         uri = self._GetURI(self._COUNTER % id)
         params = {'counter': kwargs}
         return self._GetData('PUT', uri, json.dumps(params))
 
     def DeleteCounter(self, id):
-        """
-        Removes the specified counter.
+        """ Removes the specified counter
         """
         uri = self._GetURI(self._COUNTER % id)
         return self._GetData('DELETE', uri)
 
+    def CheckCounter(self, id):
+        """ Check counter
+        """
+        uri = '%s/check' % self._COUNTER
+        uri = self._GetURI(uri % id)
+        return self._GetData('GET', uri)
+
     # Goals
 
     def GetCounterGoalList(self, id):
-        """
-        Returns information about the goals of counter.
+        """ Returns information about the goals of counter
         """
         uri = self._GetURI(self._GOALS % id)
         return self._GetData('GET', uri)
 
     def GetCounterGoal(self, id, goal_id):
-        """
-        Returns information about the specified goal of counter.
+        """ Returns information about the specified goal of counter.
         """
         uri = self._GetURI(self._GOAL % (id, goal_id))
         return self._GetData('GET', uri)
 
     def AddCounterGoal(self, id, name, type, depth, conditions=[], flag=''):
-        """
-        Creates the goal of counter.
+        """ Creates the goal of counter
         """
         uri = self._GetURI(self._GOALS % id)
         params = {
@@ -319,8 +340,7 @@ class Metrika(object):
 
     def EditCounterGoal(self, id, goal_id, name, type, depth, conditions=[],
         flag=''):
-        """
-        Changes the settings specified goal of counter.
+        """ Changes the settings specified goal of counter
         """
         uri = self._GetURI(self._GOAL % (id, goal_id))
         params = {
@@ -335,8 +355,7 @@ class Metrika(object):
         return self._GetData('PUT', uri, json.dumps(params))
 
     def DeleteCounterGoal(self, id, goal_id):
-        """
-        Removes the goal of counter.
+        """ Removes the goal of counter
         """
         uri = self._GetURI(self._GOAL % (id, goal_id))
         return self._GetData('DELETE', uri)
@@ -344,22 +363,19 @@ class Metrika(object):
     # Filters
 
     def GetCounterFilterList(self, id):
-        """
-        Returns information about the filter of counter.
+        """ Returns information about the filter of counter
         """
         uri = self._GetURI(self._FILTERS % id)
         return self._GetData('GET', uri)
 
     def GetCounterFilter(self, id, filter_id):
-        """
-        Returns information about the specified filter of counter.
+        """ Returns information about the specified filter of counter
         """
         uri = self._GetURI(self._FILTER % (id, filter_id))
         return self._GetData('GET', uri)
 
     def AddCounterFilter(self, id, action, attr, type, value, status):
-        """
-        Creates a filter of counter.
+        """ Creates a filter of counter
         """
         uri = self._GetURI(self._FILTERS % id)
         params = {
@@ -375,8 +391,7 @@ class Metrika(object):
 
     def EditCounterFilter(self, id, filter_id, action, attr, type, value,
         status):
-        """
-        Modifies the configuration of the specified filter of counter.
+        """ Modifies the configuration of the specified filter of counter
         """
         uri = self._GetURI(self._FILTER % (id, filter_id))
         params = {
@@ -391,8 +406,7 @@ class Metrika(object):
         return self._GetData('PUT', uri, json.dumps(params))
 
     def DeleteCounterFilter(self, id, filter_id):
-        """
-        Removes the filter of counter.
+        """ Removes the filter of counter
         """
         uri = self._GetURI(self._FILTER % (id, filter_id))
         return self._GetData('DELETE', uri)
@@ -400,22 +414,19 @@ class Metrika(object):
     # Operations
 
     def GetCounterOperationList(self, id):
-        """
-        Returns information about the operations of counter.
+        """ Returns information about the operations of counter
         """
         uri = self._GetURI(self._OPERATIONS % id)
         return self._GetData('GET', uri)
 
     def GetCounterOperation(self, id, operation_id):
-        """
-        Returns information about the specified operation of counter.
+        """ Returns information about the specified operation of counter
         """
         uri = self._GetURI(self._OPERATION % (id, operation_id))
         return self._GetData('GET', uri)
 
     def AddCounterOperation(self, id, action, attr, value, status):
-        """
-        Создает операцию для счетчика.
+        """ Create an operation for counter
         """
         uri = self._GetURI(self._OPERATIONS % id)
         params = {
@@ -430,8 +441,7 @@ class Metrika(object):
 
     def EditCounterOperation(self, id, operation_id, action, attr, value,
         status):
-        """
-        Modifies the configuration of the specified operation of counter.
+        """ Modifies the configuration of the specified operation of counter
         """
         uri = self._GetURI(self._OPERATION % (id, operation_id))
         params = {
@@ -445,8 +455,7 @@ class Metrika(object):
         return self._GetData('PUT', uri, json.dumps(params))
 
     def DeleteCounterOperation(self, id, operation_id):
-        """
-        Removes an operation of counter.
+        """ Removes an operation of counter
         """
         uri = self._GetURI(self._OPERATION % (id, operation_id))
         return self._GetData('DELETE', uri)
@@ -454,50 +463,49 @@ class Metrika(object):
     # Grants
 
     def GetCounterGrantList(self, id):
-        """
-        Returns information about the permissions to manage the counter and
-        statistics.
+        """ Returns information about the permissions to manage the counter and
+            statistics
         """
         uri = self._GetURI(self._GRANTS % id)
         return self._GetData('GET', uri)
 
     def GetCounterGrant(self, id, user_login):
-        """
-        Returns information about a specific permit to control the counter and
-        statistics.
+        """ Returns information about a specific permit to control the counter
+            and statistics
         """
         uri = self._GetURI(self._GRANT % (id, user_login))
         return self._GetData('GET', uri)
 
-    def AddCounterGrant(self, id, user_login, perm):
-        """
-        Creates a permission to manage the counter and statistics.
+    def AddCounterGrant(self, id, user_login, perm, comment=''):
+        """ Creates a permission to manage the counter and statistics
         """
         uri = self._GetURI(self._GRANTS % id)
         params = {
             'grant': {
                 'perm': perm,
-                'user_login': user_login
+                'user_login': user_login,
+                'comment': comment
             }
         }
         return self._GetData('POST', uri, json.dumps(params))
 
-    def EditCounterGrant(self, id, user_login, perm):
-        """
-        Modifies the configuration of the specified permission to manage
-        the counter and statistics.
+    def EditCounterGrant(self, id, user_login, perm, comment='',
+        comment_remove=0):
+        """ Modifies the configuration of the specified permission to manage
+            the counter and statistics
         """
         uri = self._GetURI(self._GRANT % (id, user_login))
         params = {
             'grant': {
-                'perm': perm
+                'perm': perm,
+                'comment': comment,
+                'comment_remove': comment_remove
             }
         }
         return self._GetData('PUT', uri, json.dumps(params))
 
     def DeleteCounterGrant(self, id, user_login):
-        """
-        Removes the permissions to manage the counter and statistics.
+        """ Removes the permissions to manage the counter and statistics
         """
         uri = self._GetURI(self._GRANT % (id, user_login))
         return self._GetData('DELETE', uri)
@@ -505,37 +513,34 @@ class Metrika(object):
     # Delegates
 
     def GetDelegates(self):
-        """
-        Returns list of delegates who have been granted full access to
-        the account of the current user.
+        """ Returns list of delegates who have been granted full access to
+            the account of the current user
         """
         uri = self._GetURI(self._DELEGATES)
         return self._GetData('GET', uri)
 
-    def AddDelegate(self, user_login):
-        """
-        Modifies the list of delegates for the current user account.
+    def AddDelegate(self, user_login, comment=''):
+        """ Modifies the list of delegates for the current user account
         """
         uri = self._GetURI(self._DELEGATES)
         params = {
             'delegate': {
-                'user_login': user_login
+                'user_login': user_login,
+                'comment': comment
             }
         }
         return self._GetData('POST', uri, json.dumps(params))
 
     def EditDelegates(self, delegates):
-        """
-        Adds a user login in the list of delegates for the current account.
+        """ Adds a user login in the list of delegates for the current account
         """
         uri = self._GetURI(self._DELEGATES)
         params = {'delegates': delegates}
         return self._GetData('PUT', uri, json.dumps(params))
 
     def DeleteDelegate(self, user_login):
-        """
-        Removes the user's login from the list of delegates for
-        the current account.
+        """ Removes the user's login from the list of delegates for the
+            current account
         """
         uri = self._GetURI(self._DELEGATE % user_login)
         return self._GetData('DELETE', uri)
@@ -543,64 +548,59 @@ class Metrika(object):
     # Accounts
 
     def GetAccounts(self):
-        """
-        Returns a list of accounts, the delegate of which is the current user.
+        """ Returns a list of accounts, the delegate of which is the
+            current user
         """
         uri = self._GetURI(self._ACCOUNTS)
         return self._GetData('GET', uri)
 
     def EditAccounts(self, accounts):
-        """
-        Modifies the list of accounts whose delegate is the current user.
-        Account list is updated in accordance with the list of usernames
-        input structure.
-        ! If the input structure does not specify a login user delegated by
-        the current user, full access to the this user account will be
-        revoked.
-        ! If the input structure of the specified user's login, not included in
-        the current list of accounts, full access to the account of this user
-        NOT available.
+        """ Modifies the list of accounts whose delegate is the current user.
+            Account list is updated in accordance with the list of usernames
+            input structure.
+            ! If the input structure does not specify a login user delegated by
+            the current user, full access to the this user account will be
+            revoked.
+            ! If the input structure of the specified user's login,
+            not included in the current list of accounts, full access to the
+            account of this user NOT available.
         """
         uri = self._GetURI(self._ACCOUNTS)
         params = {'accounts': accounts}
         return self._GetData('PUT', uri, json.dumps(params))
 
     def DeleteAccount(self, user_login):
-        """
-        Removes the user's login from the list of accounts, which are delegate
-        is the current user.
-        ! When you delete a user name from the list of accounts full access to
-        your account will be revoked.
+        """ Removes the user's login from the list of accounts, which are
+            delegate is the current user.
+            ! When you delete a user name from the list of accounts full
+            access to your account will be revoked.
         """
         uri = self._GetURI(self._ACCOUNT % user_login)
         return self._GetData('DELETE', uri)
 
     # Statistics
 
+    @_get_all_pages('data', 'totals')
     def GetStatTrafficSummary(self, id, goal_id=None, date1='', date2='',
-        group='day', per_page=100, next=''):
+        group='day', per_page=100):
+        """ Returns data about traffic of site
         """
-        Returns data about traffic of site.
-        """
-        params = next[next.find('?') + 1:] if next else ''
-        uri = self._GetURI(self._STAT_TRAFFIC_SUMMARY, params)
-        params = {}
-        if not next:
-            params = {
-                'id': id,
-                'date1': date1,
-                'date2': date2,
-                'group': group,
-                'per_page': str(per_page)
-            }
-            if not goal_id is None:
-                params['goal_id'] = str(goal_id)
+        uri = self._GetURI(self._STAT_TRAFFIC_SUMMARY)
+        params = {
+            'id': id,
+            'date1': date1,
+            'date2': date2,
+            'group': group,
+            'per_page': str(per_page)
+        }
+        if not goal_id is None:
+            params['goal_id'] = str(goal_id)
+
         return self._GetData('GET', uri, params)
 
     def GetStatTrafficDeepness(self, id, goal_id=None, date1='', date2=''):
-        """
-        Returns data on the number of pages viewed and time visitors
-        spent on the site.
+        """ Returns data on the number of pages viewed and time visitors
+            spent on the site
         """
         uri = self._GetURI(self._STAT_TRAFFIC_DEEPNESS)
         params = {
@@ -613,9 +613,8 @@ class Metrika(object):
         return self._GetData('GET', uri, params)
 
     def GetStatTrafficHourly(self, id, goal_id=None, date1='', date2=''):
-        """
-        Returns data on the distribution of traffic on the site by time of day,
-        for each hourly of period.
+        """ Returns data on the distribution of traffic on the site by
+            time of day, for each hourly of period
         """
         uri = self._GetURI(self._STAT_TRAFFIC_HOURLY)
         params = {
@@ -627,30 +626,28 @@ class Metrika(object):
             params['goal_id'] = goal_id
         return self._GetData('GET', uri, params)
 
+    @_get_all_pages('data', 'totals')
     def GetStatTrafficLoad(self, id, date1='', date2='', group='day',
-        per_page=100, next=''):
+        per_page=100):
+        """ Returns the maximum number of requests (alarms counter) per second
+            and the maximum number of online visitors each day selected
+            time period
         """
-        Returns the maximum number of requests (alarms counter) per second and
-        the maximum number of online visitors each day selected time period.
-        """
-        params = next[next.find('?') + 1:] if next else ''
-        uri = self._GetURI(self._STAT_TRAFFIC_LOAD, params)
-        params = {}
-        if not next:
-            params = {
-                'id': id,
-                'date1': date1,
-                'date2': date2,
-                'group': group,
-                'per_page': per_page
-            }
+        uri = self._GetURI(self._STAT_TRAFFIC_LOAD)
+        params = {
+            'id': id,
+            'date1': date1,
+            'date2': date2,
+            'group': group,
+            'per_page': per_page
+        }
+
         return self._GetData('GET', uri, params)
 
     def GetStatSourcesSummary(self, id, goal_id=None, date1='', date2='',
         sort='visits', reverse=1):
-        """
-        Returns the conversion data from all sources on the site,
-        where installed the specified counter.
+        """ Returns the conversion data from all sources on the site,
+            where installed the specified counter
         """
         uri = self._GetURI(self._STAT_SOURCES_SUMMARY)
         params = {
@@ -664,324 +661,338 @@ class Metrika(object):
             params['goal_id'] = goal_id
         return self._GetData('GET', uri, params)
 
+    @_get_all_pages('data', 'totals')
     def GetStatSourcesSites(self, id, goal_id=None, date1='', date2='',
-        table_mode='plain', per_page=100, sort='visits', reverse=1, next=''):
+        table_mode='plain', per_page=100, sort='visits', reverse=1):
+        """ Returns the conversion data from other sites on the web site,
+            where installed the specified counter
         """
-        Returns the conversion data from other sites on the web site,
-        where installed the specified counter.
-        """
-        params = next[next.find('?') + 1:] if next else ''
-        uri = self._GetURI(self._STAT_SOURCES_SITES, params)
-        params = {}
-        if not next:
-            params = {
-                'id': id,
-                'date1': date1,
-                'date2': date2,
-                'table_mode': table_mode,
-                'per_page': per_page,
-                'sort': sort,
-                'reverse': reverse
-            }
-            if not goal_id is None:
-                params['goal_id'] = goal_id
+        uri = self._GetURI(self._STAT_SOURCES_SITES)
+        params = {
+            'id': id,
+            'date1': date1,
+            'date2': date2,
+            'table_mode': table_mode,
+            'per_page': per_page,
+            'sort': sort,
+            'reverse': reverse
+        }
+        if not goal_id is None:
+            params['goal_id'] = goal_id
+
         return self._GetData('GET', uri, params)
 
+    @_get_all_pages('data', 'totals')
     def GetStatSourcesSearchEngines(self, id, goal_id=None, date1='', date2='',
-        table_mode='plain', per_page=100, sort='visits', reverse=1, next=''):
+        table_mode='plain', per_page=100, sort='visits', reverse=1):
+        """ Returns the conversion data from the search engine's website,
+            where installed the specified counter
         """
-        Returns the conversion data from the search engine's website,
-        where installed the specified counter.
-        """
-        params = next[next.find('?') + 1:] if next else ''
-        uri = self._GetURI(self._STAT_SOURCES_SEARCH_ENGINES, params)
-        params = {}
-        if not next:
-            params = {
-                'id': id,
-                'date1': date1,
-                'date2': date2,
-                'table_mode': table_mode,
-                'per_page': per_page,
-                'sort': sort,
-                'reverse': reverse
-            }
-            if not goal_id is None:
-                params['goal_id'] = goal_id
+        uri = self._GetURI(self._STAT_SOURCES_SEARCH_ENGINES)
+        params = {
+            'id': id,
+            'date1': date1,
+            'date2': date2,
+            'table_mode': table_mode,
+            'per_page': per_page,
+            'sort': sort,
+            'reverse': reverse
+        }
+        if not goal_id is None:
+            params['goal_id'] = goal_id
+
         return self._GetData('GET', uri, params)
 
+    @_get_all_pages('data', 'totals')
     def GetStatSourcesPhrases(self, id, goal_id=None, se_id=None, date1='',
-        date2='', per_page=100, sort='visits', reverse=1, next=''):
+        date2='', per_page=100, sort='visits', reverse=1):
+        """ Returns information about the search phrases that visitors find
+            link to the site with installed a counter
         """
-        Returns information about the search phrases that visitors find
-        link to the site with installed a counter.
-        """
-        params = next[next.find('?') + 1:] if next else ''
-        uri = self._GetURI(self._STAT_SOURCES_PHRASES, params)
-        params = {}
-        if not next:
-            params = {
-                'id': id,
-                'date1': date1,
-                'date2': date2,
-                'sort': sort,
-                'reverse': reverse
-            }
-            if not goal_id is None:
-                params['goal_id'] = goal_id
-            if not se_id is None:
-                params['se_id'] = se_id
+        uri = self._GetURI(self._STAT_SOURCES_PHRASES)
+
+        params = {
+            'id': id,
+            'date1': date1,
+            'date2': date2,
+            'sort': sort,
+            'reverse': reverse
+        }
+        if not goal_id is None:
+            params['goal_id'] = goal_id
+        if not se_id is None:
+            params['se_id'] = se_id
+
         return self._GetData('GET', uri, params)
 
+    @_get_all_pages('data', 'totals')
     def GetStatSourcesMarketing(self, id, goal_id=None, date1='', date2='',
-        table_mode='plain', per_page=100, sort='visits', reverse=1, next=''):
+        table_mode='plain', per_page=100, sort='visits', reverse=1):
+        """ Returns the conversion data from the advertising system on the site,
+            where installed the specified counter
         """
-        Returns the conversion data from the advertising system on the site,
-        where installed the specified counter.
-        """
-        params = next[next.find('?') + 1:] if next else ''
-        uri = self._GetURI(self._STAT_SOURCES_MARKETING, params)
-        params = {}
-        if not next:
-            params = {
-                'id': id,
-                'date1': date1,
-                'date2': date2,
-                'table_mode': table_mode,
-                'per_page': per_page,
-                'sort': sort,
-                'reverse': reverse
-            }
-            if not goal_id is None:
-                params['goal_id'] = goal_id
+        uri = self._GetURI(self._STAT_SOURCES_MARKETING)
+        params = {
+            'id': id,
+            'date1': date1,
+            'date2': date2,
+            'table_mode': table_mode,
+            'per_page': per_page,
+            'sort': sort,
+            'reverse': reverse
+        }
+        if not goal_id is None:
+            params['goal_id'] = goal_id
+
         return self._GetData('GET', uri, params)
 
+    @_get_all_pages('data', 'totals')
     def GetStatSourcesDirectSummary(self, id, goal_id=None, date1='', date2='',
-        table_mode='plain', per_page=100, sort='visits', reverse=1, next=''):
+        table_mode='plain', per_page=100, sort='visits', reverse=1):
+        """ Returns record of advertising campaigns Yandex.Direct, ad which
+            visitors to a site
         """
-        Returns record of advertising campaigns Yandex.Direct, ad which
-        visitors to a site.
-        """
-        params = next[next.find('?') + 1:] if next else ''
-        uri = self._GetURI(self._STAT_SOURCES_DIRECT_SUMMARY, params)
-        params = {}
-        if not next:
-            params = {
-                'id': id,
-                'date1': date1,
-                'date2': date2,
-                'table_mode': table_mode,
-                'per_page': per_page,
-                'sort': sort,
-                'reverse': reverse
-            }
-            if not goal_id is None:
-                params['goal_id'] = goal_id
+        uri = self._GetURI(self._STAT_SOURCES_DIRECT_SUMMARY)
+        params = {
+            'id': id,
+            'date1': date1,
+            'date2': date2,
+            'table_mode': table_mode,
+            'per_page': per_page,
+            'sort': sort,
+            'reverse': reverse
+        }
+        if not goal_id is None:
+            params['goal_id'] = goal_id
+
         return self._GetData('GET', uri, params)
 
+    @_get_all_pages('data', 'totals')
     def GetStatSourcesDirectPlatforms(self, id, goal_id=None, date1='', date2='',
-        per_page=100, sort='visits', reverse=1, next=''):
+        per_page=100, sort='visits', reverse=1):
+        """ Returns a report on areas with which the transition through
+            advertisements on the advertiser's site
         """
-        Returns a report on areas with which the transition through
-        advertisements on the advertiser's site.
-        """
-        params = next[next.find('?') + 1:] if next else ''
-        uri = self._GetURI(self._STAT_SOURCES_DIRECT_PLATFORMS, params)
-        params = {}
-        if not next:
-            params = {
-                'id': id,
-                'date1': date1,
-                'date2': date2,
-                'per_page': per_page,
-                'sort': sort,
-                'reverse': reverse
-            }
-            if not goal_id is None:
-                params['goal_id'] = goal_id
+        uri = self._GetURI(self._STAT_SOURCES_DIRECT_PLATFORMS)
+        params = {
+            'id': id,
+            'date1': date1,
+            'date2': date2,
+            'per_page': per_page,
+            'sort': sort,
+            'reverse': reverse
+        }
+        if not goal_id is None:
+            params['goal_id'] = goal_id
+
         return self._GetData('GET', uri, params)
 
+    @_get_all_pages('data', 'totals')
     def GetStatSourcesDirectRegions(self, id, goal_id=None, date1='', date2='',
-        table_mode='plain', per_page=100, sort='visits', reverse=1, next=''):
+        table_mode='plain', per_page=100, sort='visits', reverse=1):
+        """ Returns information about membership of visitors who clicked on the
+            site through advertisements to a particular geographical region
         """
-        Returns information about membership of visitors who clicked on the site
-        through advertisements to a particular geographical region.
-        """
-        params = next[next.find('?') + 1:] if next else ''
-        uri = self._GetURI(self._STAT_SOURCES_DIRECT_REGIONS, params)
-        params = {}
-        if not next:
-            params = {
-                'id': id,
-                'date1': date1,
-                'date2': date2,
-                'table_mode': table_mode,
-                'per_page': per_page,
-                'sort': sort,
-                'reverse': reverse
-            }
-            if not goal_id is None:
-                params['goal_id'] = goal_id
+        uri = self._GetURI(self._STAT_SOURCES_DIRECT_REGIONS)
+        params = {
+            'id': id,
+            'date1': date1,
+            'date2': date2,
+            'table_mode': table_mode,
+            'per_page': per_page,
+            'sort': sort,
+            'reverse': reverse
+        }
+        if not goal_id is None:
+            params['goal_id'] = goal_id
+
         return self._GetData('GET', uri, params)
 
+    @_get_all_pages('data')
     def GetStatSourcesTags(self, id, goal_id=None, date1='', date2='',
-        table_mode='plain', per_page=100, sort='visits', reverse=1, next=''):
+        table_mode='plain', per_page=100, sort='visits', reverse=1):
+        """ Returns information about visits to a site on the links, which
+            contain any of the four most frequently used tags: utm, openstat,
+            from, glcid
         """
-        Returns information about visits to a site on the links, which contain
-        any of the four most frequently used tags: utm, openstat, from, glcid.
-        """
-        params = next[next.find('?') + 1:] if next else ''
-        uri = self._GetURI(self._STAT_SOURCES_TAGS, params)
-        params = {}
-        if not next:
-            params = {
-                'id': id,
-                'date1': date1,
-                'date2': date2,
-                'table_mode': table_mode,
-                'per_page': per_page,
-                'sort': sort,
-                'reverse': reverse
-            }
-            if not goal_id is None:
-                params['goal_id'] = goal_id
+        uri = self._GetURI(self._STAT_SOURCES_TAGS)
+        params = {
+            'id': id,
+            'date1': date1,
+            'date2': date2,
+            'table_mode': table_mode,
+            'per_page': per_page,
+            'sort': sort,
+            'reverse': reverse
+        }
+        if not goal_id is None:
+            params['goal_id'] = goal_id
+
         return self._GetData('GET', uri, params)
 
+    @_get_all_pages('data')
     def GetStatContentPopular(self, id, mirror_id='', date1='', date2='',
-        table_mode='plain', per_page=100, sort='visits', reverse=1, next=''):
+        table_mode='plain', per_page=100, sort='visits', reverse=1):
+        """ Returns attendance rating web pages in descending order of display
         """
-        Returns attendance rating web pages in descending order of display.
-        """
-        params = next[next.find('?') + 1:] if next else ''
-        uri = self._GetURI(self._STAT_CONTENT_POPULAR, params)
-        params = {}
-        if not next:
-            params = {
-                'id': id,
-                'mirror_id': mirror_id,
-                'date1': date1,
-                'date2': date2,
-                'table_mode': table_mode,
-                'per_page': per_page,
-                'sort': sort,
-                'reverse': reverse
-            }
+        uri = self._GetURI(self._STAT_CONTENT_POPULAR)
+        params = {
+            'id': id,
+            'mirror_id': mirror_id,
+            'date1': date1,
+            'date2': date2,
+            'table_mode': table_mode,
+            'per_page': per_page,
+            'sort': sort,
+            'reverse': reverse
+        }
+
         return self._GetData('GET', uri, params)
 
+    @_get_all_pages('data')
     def GetStatContentEntrance(self, id, goal_id=None, mirror_id='', date1='',
-        date2='', table_mode='plain', per_page=100, sort='visits', reverse=1,
-        next=''):
+        date2='', table_mode='plain', per_page=100, sort='visits', reverse=1):
+        """ Returns information about entry points to the site
+            (the first pages of visits)
         """
-        Returns information about entry points to the site
-        (the first pages of visits).
-        """
-        params = next[next.find('?') + 1:] if next else ''
-        uri = self._GetURI(self._STAT_CONTENT_ENTRANCE, params)
-        params = {}
-        if not next:
-            params = {
-                'id': id,
-                'mirror_id': mirror_id,
-                'date1': date1,
-                'date2': date2,
-                'table_mode': table_mode,
-                'per_page': per_page,
-                'sort': sort,
-                'reverse': reverse
-            }
-            if not goal_id is None:
-                params['goal_id'] = goal_id
+        uri = self._GetURI(self._STAT_CONTENT_ENTRANCE)
+        params = {
+            'id': id,
+            'mirror_id': mirror_id,
+            'date1': date1,
+            'date2': date2,
+            'table_mode': table_mode,
+            'per_page': per_page,
+            'sort': sort,
+            'reverse': reverse
+        }
+        if not goal_id is None:
+            params['goal_id'] = goal_id
+
         return self._GetData('GET', uri, params)
 
+    @_get_all_pages('data')
     def GetStatContentExit(self, id, mirror_id='', date1='', date2='',
-        table_mode='plain', per_page=100, sort='visits', reverse=1, next=''):
+        table_mode='plain', per_page=100, sort='visits', reverse=1):
+        """ Returns information about exits from the site
+            (the last pages of visits)
         """
-        Returns information about exits from the site
-        (the last pages of visits).
-        """
-        params = next[next.find('?') + 1:] if next else ''
-        uri = self._GetURI(self._STAT_CONTENT_EXIT, params)
-        params = {}
-        if not next:
-            params = {
-                'id': id,
-                'mirror_id': mirror_id,
-                'date1': date1,
-                'date2': date2,
-                'table_mode': table_mode,
-                'per_page': per_page,
-                'sort': sort,
-                'reverse': reverse
-            }
+        uri = self._GetURI(self._STAT_CONTENT_EXIT)
+        params = {
+            'id': id,
+            'mirror_id': mirror_id,
+            'date1': date1,
+            'date2': date2,
+            'table_mode': table_mode,
+            'per_page': per_page,
+            'sort': sort,
+            'reverse': reverse
+        }
+
         return self._GetData('GET', uri, params)
 
+    @_get_all_pages('data', 'totals')
     def GetStatContentTitles(self, id, date1='', date2='', per_page=100,
-        sort='visits', reverse=1, next=''):
+        sort='visits', reverse=1):
+        """ Returns the rating of attendance page of the site showing their
+            titles (from the tag title)
         """
-        Returns the rating of attendance page of the site showing their titles
-        (from the tag title).
-        """
-        params = next[next.find('?') + 1:] if next else ''
-        uri = self._GetURI(self._STAT_CONTENT_TITLES, params)
-        params = {}
-        if not next:
-            params = {
-                'id': id,
-                'date1': date1,
-                'date2': date2,
-                'per_page': per_page,
-                'sort': sort,
-                'reverse': reverse
-            }
+        uri = self._GetURI(self._STAT_CONTENT_TITLES)
+        params = {
+            'id': id,
+            'date1': date1,
+            'date2': date2,
+            'per_page': per_page,
+            'sort': sort,
+            'reverse': reverse
+        }
+
         return self._GetData('GET', uri, params)
 
+    @_get_all_pages('data')
     def GetStatContentUrlParam(self, id, date1='', date2='', table_mode='plain',
-        per_page=100, sort='visits', reverse=1, next=''):
+        per_page=100, sort='visits', reverse=1):
+        """ Returns data about the parameters mentioned Metrika in the URL
+            visited site pages
         """
-        Returns data about the parameters mentioned Metrika in the URL visited
-        site pages.
-        """
-        params = next[next.find('?') + 1:] if next else ''
-        uri = self._GetURI(self._STAT_CONTENT_URL_PARAM, params)
-        params = {}
-        if not next:
-            params = {
-                'id': id,
-                'date1': date1,
-                'date2': date2,
-                'table_mode': table_mode,
-                'per_page': per_page,
-                'sort': sort,
-                'reverse': reverse
-            }
+        uri = self._GetURI(self._STAT_CONTENT_URL_PARAM)
+        params = {
+            'id': id,
+            'date1': date1,
+            'date2': date2,
+            'table_mode': table_mode,
+            'per_page': per_page,
+            'sort': sort,
+            'reverse': reverse
+        }
+
         return self._GetData('GET', uri, params)
 
+    @_get_all_pages('data')
+    def GetStatContentUserVars(self, id, goal_id=None, date1='', date2='',
+        table_mode='plain', per_page=100, sort='visits', reverse=1):
+        """ Returns information about the user parameters, passed through
+            the counter code
+        """
+        uri = self._GetURI(self._STAT_CONTENT_USER_VARS)
+        params = {
+            'id': id,
+            'date1': date1,
+            'date2': date2,
+            'table_mode': table_mode,
+            'per_page': per_page,
+            'sort': sort,
+            'reverse': reverse
+        }
+        if not goal_id is None:
+            params['goal_id'] = goal_id
+
+        return self._GetData('GET', uri, params)
+
+    @_get_all_pages('data')
+    def GetStatContentECommerce(self, id, goal_id, date1='', date2='',
+        table_mode='plain', per_page=100, sort='visits', reverse=1):
+        """ Returns information about ordering from an online store,
+            passed through the counter code
+        """
+        uri = self._GetURI(self._STAT_CONTENT_ECOMMERCE)
+        params = {
+            'id': id,
+            'goal_id': goal_id,
+            'date1': date1,
+            'date2': date2,
+            'table_mode': table_mode,
+            'per_page': per_page,
+            'sort': sort,
+            'reverse': reverse
+        }
+
+        return self._GetData('GET', uri, params)
+
+    @_get_all_pages('data', 'totals')
     def GetStatGeo(self, id, goal_id=None, date1='', date2='',
-        table_mode='plain', per_page=100, sort='visits', reverse=1, next=''):
+        table_mode='plain', per_page=100, sort='visits', reverse=1):
+        """ Returns information about users belonging to the geographical
+            regions. List of regions can be grouped by regions, countries and
+            continents.
         """
-        Returns information about users belonging to the geographical regions.
-        List of regions can be grouped by regions, countries and continents.
-        """
-        params = next[next.find('?') + 1:] if next else ''
-        uri = self._GetURI(self._STAT_GEO, params)
-        params = {}
-        if not next:
-            params = {
-                'id': id,
-                'date1': date1,
-                'date2': date2,
-                'table_mode': table_mode,
-                'per_page': per_page,
-                'sort': sort,
-                'reverse': reverse
-            }
-            if not goal_id is None:
-                params['goal_id'] = goal_id
+        uri = self._GetURI(self._STAT_GEO)
+        params = {
+            'id': id,
+            'date1': date1,
+            'date2': date2,
+            'table_mode': table_mode,
+            'per_page': per_page,
+            'sort': sort,
+            'reverse': reverse
+        }
+        if not goal_id is None:
+            params['goal_id'] = goal_id
+
         return self._GetData('GET', uri, params)
 
     def GetStatDemographyAgeGender(self, id, goal_id=None, date1='', date2=''):
-        """
-        Returns the data separately by sex and age of visitors.
+        """ Returns the data separately by sex and age of visitors
         """
         uri = self._GetURI(self._STAT_DEMOGRAPHY_AGE_GENDER)
         params = {
@@ -991,11 +1002,11 @@ class Metrika(object):
         }
         if not goal_id is None:
             params['goal_id'] = goal_id
+
         return self._GetData('GET', uri, params)
 
     def GetStatDemographyStructure(self, id, goal_id=None, date1='', date2=''):
-        """
-        Returns merged data by sex and age.
+        """ Returns merged data by sex and age
         """
         uri = self._GetURI(self._STAT_DEMOGRAPHY_STRUCTURE)
         params = {
@@ -1005,168 +1016,155 @@ class Metrika(object):
         }
         if not goal_id is None:
             params['goal_id'] = goal_id
+
         return self._GetData('GET', uri, params)
 
+    @_get_all_pages('data', 'totals')
     def GetStatTechBrowsers(self, id, goal_id=None, date1='', date2='',
-        table_mode='plain', per_page=100, sort='visits', reverse=1, next=''):
+        table_mode='plain', per_page=100, sort='visits', reverse=1):
+        """ Returns data about the visitor's browser
         """
-        Returns data about the visitor's browser.
-        """
-        params = next[next.find('?') + 1:] if next else ''
-        uri = self._GetURI(self._STAT_TECH_BROWSERS, params)
-        params = {}
-        if not next:
-            params = {
-                'id': id,
-                'date1': date1,
-                'date2': date2,
-                'table_mode': table_mode,
-                'per_page': per_page,
-                'sort': sort,
-                'reverse': reverse
-            }
-            if not goal_id is None:
-                params['goal_id'] = goal_id
+        uri = self._GetURI(self._STAT_TECH_BROWSERS)
+        params = {
+            'id': id,
+            'date1': date1,
+            'date2': date2,
+            'table_mode': table_mode,
+            'per_page': per_page,
+            'sort': sort,
+            'reverse': reverse
+        }
+        if not goal_id is None:
+            params['goal_id'] = goal_id
+
         return self._GetData('GET', uri, params)
 
+    @_get_all_pages('data', 'totals')
     def GetStatTechOs(self, id, goal_id=None, date1='', date2='',
-        table_mode='plain', per_page=100, sort='visits', reverse=1, next=''):
+        table_mode='plain', per_page=100, sort='visits', reverse=1):
+        """ Returns data about the operating systems of visitors
         """
-        Returns data about the operating systems of visitors.
-        """
-        params = next[next.find('?') + 1:] if next else ''
-        uri = self._GetURI(self._STAT_TECH_OS, params)
-        params = {}
-        if not next:
-            params = {
-                'id': id,
-                'date1': date1,
-                'date2': date2,
-                'table_mode': table_mode,
-                'per_page': per_page,
-                'sort': sort,
-                'reverse': reverse
-            }
-            if not goal_id is None:
-                params['goal_id'] = goal_id
+        uri = self._GetURI(self._STAT_TECH_OS)
+        params = {
+            'id': id,
+            'date1': date1,
+            'date2': date2,
+            'table_mode': table_mode,
+            'per_page': per_page,
+            'sort': sort,
+            'reverse': reverse
+        }
+        if not goal_id is None:
+            params['goal_id'] = goal_id
+
         return self._GetData('GET', uri, params)
 
+    @_get_all_pages('data', 'totals', 'data_group')
     def GetStatTechDisplay(self, id, goal_id=None, date1='', date2='',
-        table_mode='plain', per_page=100, sort='visits', reverse=1, next=''):
+        table_mode='plain', per_page=100, sort='visits', reverse=1):
+        """ Returns data on the display resolution of site visitors
         """
-        Returns data on the display resolution of site visitors.
-        """
-        params = next[next.find('?') + 1:] if next else ''
-        uri = self._GetURI(self._STAT_TECH_DISPLAY, params)
-        params = {}
-        if not next:
-            params = {
-                'id': id,
-                'date1': date1,
-                'date2': date2,
-                'table_mode': table_mode,
-                'per_page': per_page,
-                'sort': sort,
-                'reverse': reverse
-            }
-            if not goal_id is None:
-                params['goal_id'] = goal_id
+        uri = self._GetURI(self._STAT_TECH_DISPLAY)
+        params = {
+            'id': id,
+            'date1': date1,
+            'date2': date2,
+            'table_mode': table_mode,
+            'per_page': per_page,
+            'sort': sort,
+            'reverse': reverse
+        }
+        if not goal_id is None:
+            params['goal_id'] = goal_id
+
         return self._GetData('GET', uri, params)
 
+    @_get_all_pages('data', 'totals', 'data_group')
     def GetStatTechMobile(self, id, goal_id=None, date1='', date2='',
-        table_mode='plain', per_page=100, sort='visits', reverse=1, next=''):
+        table_mode='plain', per_page=100, sort='visits', reverse=1):
+        """ Returns data about visitors who come to the site from mobile devices
         """
-        Returns data about visitors who come to the site from mobile devices.
-        """
-        params = next[next.find('?') + 1:] if next else ''
-        uri = self._GetURI(self._STAT_TECH_MOBILE, params)
-        params = {}
-        if not next:
-            params = {
-                'id': id,
-                'date1': date1,
-                'date2': date2,
-                'table_mode': table_mode,
-                'per_page': per_page,
-                'sort': sort,
-                'reverse': reverse
-            }
-            if not goal_id is None:
-                params['goal_id'] = goal_id
+        uri = self._GetURI(self._STAT_TECH_MOBILE)
+        params = {
+            'id': id,
+            'date1': date1,
+            'date2': date2,
+            'table_mode': table_mode,
+            'per_page': per_page,
+            'sort': sort,
+            'reverse': reverse
+        }
+        if not goal_id is None:
+            params['goal_id'] = goal_id
+
         return self._GetData('GET', uri, params)
 
+    @_get_all_pages('data', 'totals')
     def GetStatTechFlash(self, id, goal_id=None, date1='', date2='',
-        table_mode='plain', per_page=100, sort='visits', reverse=1, next=''):
+        table_mode='plain', per_page=100, sort='visits', reverse=1):
+        """ Returns data about the versions of Flash-plugin on visitors'
+            computers
         """
-        Returns data about the versions of Flash-plugin on visitors' computers.
-        """
-        params = next[next.find('?') + 1:] if next else ''
-        uri = self._GetURI(self._STAT_TECH_FLASH, params)
-        params = {}
-        if not next:
-            params = {
-                'id': id,
-                'date1': date1,
-                'date2': date2,
-                'table_mode': table_mode,
-                'per_page': per_page,
-                'sort': sort,
-                'reverse': reverse
-            }
-            if not goal_id is None:
-                params['goal_id'] = goal_id
+        uri = self._GetURI(self._STAT_TECH_FLASH)
+        params = {
+            'id': id,
+            'date1': date1,
+            'date2': date2,
+            'table_mode': table_mode,
+            'per_page': per_page,
+            'sort': sort,
+            'reverse': reverse
+        }
+        if not goal_id is None:
+            params['goal_id'] = goal_id
+
         return self._GetData('GET', uri, params)
 
+    @_get_all_pages('data', 'totals')
     def GetStatTechSilverlight(self, id, goal_id=None, date1='', date2='',
-        table_mode='plain', per_page=100, sort='visits', reverse=1, next=''):
+        table_mode='plain', per_page=100, sort='visits', reverse=1):
+        """ Returns data on the distribution of different versions of plugin
+            Silverlight
         """
-        Returns data on the distribution of different versions of plugin
-        Silverlight.
-        """
-        params = next[next.find('?') + 1:] if next else ''
-        uri = self._GetURI(self._STAT_TECH_SILVERLIGHT, params)
-        params = {}
-        if not next:
-            params = {
-                'id': id,
-                'date1': date1,
-                'date2': date2,
-                'table_mode': table_mode,
-                'per_page': per_page,
-                'sort': sort,
-                'reverse': reverse
-            }
-            if not goal_id is None:
-                params['goal_id'] = goal_id
+        uri = self._GetURI(self._STAT_TECH_SILVERLIGHT)
+        params = {
+            'id': id,
+            'date1': date1,
+            'date2': date2,
+            'table_mode': table_mode,
+            'per_page': per_page,
+            'sort': sort,
+            'reverse': reverse
+        }
+        if not goal_id is None:
+            params['goal_id'] = goal_id
+
         return self._GetData('GET', uri, params)
 
+    @_get_all_pages('data', 'totals')
     def GetStatTechDotNet(self, id, goal_id=None, date1='', date2='',
-        table_mode='plain', per_page=100, sort='visits', reverse=1, next=''):
+        table_mode='plain', per_page=100, sort='visits', reverse=1):
+        """ Returns version information .NET framework on visitors' computers
         """
-        Returns version information .NET framework on visitors' computers.
-        """
-        params = next[next.find('?') + 1:] if next else ''
-        uri = self._GetURI(self._STAT_TECH_DOTNET, params)
-        params = {}
-        if not next:
-            params = {
-                'id': id,
-                'date1': date1,
-                'date2': date2,
-                'table_mode': table_mode,
-                'per_page': per_page,
-                'sort': sort,
-                'reverse': reverse
-            }
-            if not goal_id is None:
-                params['goal_id'] = goal_id
+        uri = self._GetURI(self._STAT_TECH_DOTNET)
+        params = {
+            'id': id,
+            'date1': date1,
+            'date2': date2,
+            'table_mode': table_mode,
+            'per_page': per_page,
+            'sort': sort,
+            'reverse': reverse
+        }
+        if not goal_id is None:
+            params['goal_id'] = goal_id
+
         return self._GetData('GET', uri, params)
 
     def GetStatTechJava(self, id, goal_id=None, date1='', date2='',
         sort='visits', reverse=1):
-        """
-        Returns data on the availability of the Java platform
-        on visitors' computers.
+        """ Returns data on the availability of the Java platform
+            on visitors' computers
         """
         uri = self._GetURI(self._STAT_TECH_JAVA)
         params = {
@@ -1178,12 +1176,12 @@ class Metrika(object):
         }
         if not goal_id is None:
             params['goal_id'] = goal_id
+
         return self._GetData('GET', uri, params)
 
     def GetStatTechCookies(self, id, goal_id=None, date1='', date2='',
         sort='visits', reverse=1):
-        """
-        Returns data about visits visitors with disabled Cookies.
+        """ Returns data about visits visitors with disabled Cookies
         """
         uri = self._GetURI(self._STAT_TECH_COOKIES)
         params = {
@@ -1199,9 +1197,8 @@ class Metrika(object):
 
     def GetStatTechJavascript(self, id, goal_id=None, date1='', date2='',
         sort='visits', reverse=1):
-        """
-        Returns data about visits visitors with disabled JavaScript
-        (ECMAScript).
+        """ Returns data about visits visitors with disabled JavaScript
+            (ECMAScript)
         """
         uri = self._GetURI(self._STAT_TECH_JAVASCRIPT)
         params = {
@@ -1214,10 +1211,3 @@ class Metrika(object):
         if not goal_id is None:
             params['goal_id'] = goal_id
         return self._GetData('GET', uri, params)
-
-
-def main():
-    pass
-
-if __name__ == '__main__':
-    main()

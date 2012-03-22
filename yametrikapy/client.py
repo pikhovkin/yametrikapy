@@ -8,7 +8,7 @@
 # Author:      Sergey Pikhovkin (s@pikhovkin.ru)
 #
 # Created:     10.02.2011
-# Copyright:   (c) Sergey Pikhovkin 2011
+# Copyright:   (c) Sergey Pikhovkin 2012
 # Licence:     MIT
 #-------------------------------------------------------------------------------
 
@@ -143,10 +143,3 @@ class APIClient(object):
         if s and (s.find('gzip') > -1):
             page = self._gunzip(page)
         return page
-
-
-def main():
-    pass
-
-if __name__ == '__main__':
-    main()
