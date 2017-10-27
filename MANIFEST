@@ -2,4 +2,5 @@ setup.py
 yametrikapy\__init__.py
 yametrikapy\client.py
 yametrikapy\core.py
-yametrikapy_test.py
+yametrikapy\tests\__init__.py
+yametrikapy\tests\test_yametrika.py

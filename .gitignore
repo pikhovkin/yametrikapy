@@ -1,0 +1,4 @@
+.idea
+*.pyc
+
+secret_settings.py

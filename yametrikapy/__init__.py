@@ -1,5 +1,5 @@
-﻿__version__ = '1.0'
+﻿from .core import Metrika
 
+
+__version__ = '2.0'
 __author__ = 'Sergey Pikhovkin <s@pikhovkin.ru>'
-
-from core import Metrika

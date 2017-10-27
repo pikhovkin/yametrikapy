@@ -11,6 +11,7 @@ def read(fname):
     except IOError:
         return ''
 
+
 setup(
     name='yametrikapy',
     version=__import__('yametrikapy').__version__,
