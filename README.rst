@@ -3,8 +3,6 @@
 
 The library support only JSON format.
 
-Sign in via login and password, code or token.
-
 To sign in you need client_id, get it from https://tech.yandex.ru/oauth/doc/dg/tasks/register-client-docpage/ for your application.
 
 To connect to Yandex.Metric, you need to get a code:
