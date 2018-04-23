@@ -27,6 +27,12 @@ or `to obtain a debug token manually <https://tech.yandex.ru/oauth/doc/dg/tasks/
 
     metrika = Metrika(client_id, token=token)
 
+Installation
+------------
+::
+
+    pip install yametrikapy
+
 Example usage
 -------------
 
