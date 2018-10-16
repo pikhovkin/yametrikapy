@@ -58,7 +58,7 @@ Example usage
         print(counter.counter['id'], counter.counter['name'])
 
         # Output obtained data
-        print metrika.get_data()
+        print(metrika.get_data())
 
     if __name__ == '__main__':
         main()

@@ -56,6 +56,9 @@ class TestMetrikaWithCounter(TestMetrikaBase):
         self.assertTrue(counter.success)
 
     def test_counters(self):
+        counters = self.metrika.counters().counters
+        self.assertIsInstance(counters, list)
+
         counters = self.metrika.counters(permission='own').counters
         self.assertIsInstance(counters, list)
         # self.assertTrue(len(counters) > 0)

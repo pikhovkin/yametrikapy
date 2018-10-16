@@ -251,7 +251,8 @@ class Metrika(object):
 
     @_get_all_pages('counters')
     def counters(self, callback='', favorite=False, field='', label_id=None, offset=1, per_page=1000,
-                 permission='', reverse=True, search_string='', sort='Default', status='Active', type=''):
+                 permission='own,edit,view', reverse=True, search_string='', sort='Default',
+                 status='Active', type=''):
         """ Return a list of existing counters available to the user
         """
         uri = self._get_uri(self.COUNTERS)
