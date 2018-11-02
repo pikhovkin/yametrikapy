@@ -1,21 +1,13 @@
 ﻿#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import os
 from setuptools import setup, find_packages
-
-
-def read(fname):
-    try:
-        return open(os.path.join(os.path.dirname(__file__), fname)).read()
-    except IOError:
-        return ''
 
 
 setup(
     name='yametrikapy',
     version=__import__('yametrikapy').__version__,
-    description=read('DESCRIPTION'),
+    description=open('DESCRIPTION').read(),
     license='MIT',
     keywords='yandex metrika api',
     author='Sergey Pikhovkin',
@@ -36,7 +28,8 @@ setup(
     install_requires=[],
     include_package_data=True,
     zip_safe=False,
-    long_description=read('README.rst'),
+    long_description=open('README.md').read(),
+    long_description_content_type='text/markdown',
     packages=find_packages()
 )
 
